@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chandan Tree Monitoring</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-green-50 text-gray-800 p-4">
+
+  <h1 class="text-3xl font-bold mb-6 text-center">🌳 Chandan Tree Dashboard</h1>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full bg-white rounded-xl shadow">
+      <thead class="bg-green-200 text-gray-700">
+        <tr>
+          <th class="py-2 px-4">Timestamp</th>
+          <th class="py-2 px-4">Temp (°C)</th>
+          <th class="py-2 px-4">Pressure (hPa)</th>
+          <th class="py-2 px-4">X</th>
+          <th class="py-2 px-4">Y</th>
+          <th class="py-2 px-4">Z</th>
+          <th class="py-2 px-4">Location</th>
+          <th class="py-2 px-4">Event</th>
+        </tr>
+      </thead>
+      <tbody id="sensor-data" class="text-center"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const API_URL = "https://chandantree.karuna28396.repl.co/api/sensor-data";
+
+    fetch(API_URL)
+      .then((res) => res.json())
+      .then((data) => {
+        const tbody = document.getElementById("sensor-data");
+        data.forEach(item => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="py-2 px-4">${item.timestamp}</td>
+            <td class="py-2 px-4">${item.temperature}</td>
+            <td class="py-2 px-4">${item.pressure}</td>
+            <td class="py-2 px-4">${item.motion_x}</td>
+            <td class="py-2 px-4">${item.motion_y}</td>
+            <td class="py-2 px-4">${item.motion_z}</td>
+            <td class="py-2 px-4">${item.location}</td>
+            <td class="py-2 px-4">${item.event}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      })
+      .catch((err) => {
+        console.error("Failed to fetch sensor data:", err);
+      });
+  </script>
+
+</body>
+</html>
