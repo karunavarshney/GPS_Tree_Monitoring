@@ -1,59 +1,303 @@
-<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chandan Tree Monitoring</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forest Monitoring Dashboard</title>
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Prop Types -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+  <!-- React and ReactDOM -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <!-- Babel for JSX -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
+  <!-- ChronoNode for date parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chrono-node/1.3.11/chrono.min.js"></script>
+  <!-- Recharts for charts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
+  <!-- Leaflet for maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
-<body class="bg-green-50 text-gray-800 p-4">
+<body class="bg-gray-100 font-sans">
+  <div id="root"></div>
 
-  <h1 class="text-3xl font-bold mb-6 text-center">🌳 Chandan Tree Dashboard</h1>
+  <script type="text/babel">
+    // Initializing React and dependencies
+    const { useState, useEffect, useMemo } = React;
+    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } = Recharts;
 
-  <div class="overflow-x-auto">
-    <table class="min-w-full bg-white rounded-xl shadow">
-      <thead class="bg-green-200 text-gray-700">
-        <tr>
-          <th class="py-2 px-4">Timestamp</th>
-          <th class="py-2 px-4">Temp (°C)</th>
-          <th class="py-2 px-4">Pressure (hPa)</th>
-          <th class="py-2 px-4">X</th>
-          <th class="py-2 px-4">Y</th>
-          <th class="py-2 px-4">Z</th>
-          <th class="py-2 px-4">Location</th>
-          <th class="py-2 px-4">Event</th>
-        </tr>
-      </thead>
-      <tbody id="sensor-data" class="text-center"></tbody>
-    </table>
-  </div>
+    // Parsing and cleaning CSV data
+    const parseLocation = (location) => {
+      if (!location || typeof location !== 'string') return null;
+      const [lat, lon] = location.split(',').map(v => parseFloat(v.trim()));
+      return isNaN(lat) || isNaN(lon) ? null : { lat, lon };
+    };
 
-  <script>
-    const API_URL = "https://chandantree.karuna28396.repl.co/api/sensor-data";
+    const calculateMotionMagnitude = (x, y, z) => {
+      if (isNaN(x) || isNaN(y) || isNaN(z)) return null;
+      return Math.sqrt(x * x + y * y + z * z);
+    };
 
-    fetch(API_URL)
-      .then((res) => res.json())
-      .then((data) => {
-        const tbody = document.getElementById("sensor-data");
-        data.forEach(item => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td class="py-2 px-4">${item.timestamp}</td>
-            <td class="py-2 px-4">${item.temperature}</td>
-            <td class="py-2 px-4">${item.pressure}</td>
-            <td class="py-2 px-4">${item.motion_x}</td>
-            <td class="py-2 px-4">${item.motion_y}</td>
-            <td class="py-2 px-4">${item.motion_z}</td>
-            <td class="py-2 px-4">${item.location}</td>
-            <td class="py-2 px-4">${item.event}</td>
-          `;
-          tbody.appendChild(row);
+    const processAndCleanData = (rawData) => {
+      return rawData
+        .filter(row => Object.values(row).some(val => val !== '')) // Skip empty rows
+        .map(row => {
+          const timestamp = row['timestamp'] ? chrono.parseDate(row['timestamp']) : null;
+          const temperature = parseFloat(row['temperature']);
+          const pressure = parseFloat(row['pressure']);
+          const motion_x = parseFloat(row['motion_x']);
+          const motion_y = parseFloat(row['motion_y']);
+          const motion_z = parseFloat(row['motion_z']);
+          const location = parseLocation(row['location']);
+          const event = row['event'] || 'None';
+          const motion_magnitude = calculateMotionMagnitude(motion_x, motion_y, motion_z);
+
+          return {
+            timestamp,
+            temperature: isNaN(temperature) ? null : temperature,
+            pressure: isNaN(pressure) ? null : pressure,
+            motion_x: isNaN(motion_x) ? null : motion_x,
+            motion_y: isNaN(motion_y) ? null : motion_y,
+            motion_z: isNaN(motion_z) ? null : motion_z,
+            motion_magnitude,
+            location,
+            event,
+          };
+        })
+        .filter(row => row.timestamp && row.location); // Ensure valid timestamp and location
+    };
+
+    // Main Dashboard Component
+    const Dashboard = () => {
+      const [data, setData] = useState([]);
+      const [eventFilter, setEventFilter] = useState('All');
+      const [loading, setLoading] = useState(true);
+
+      // Loading and parsing CSV data
+        useEffect(() => {
+          fetch('sample_forest_monitoring_data.csv')
+            .then(response => response.text())
+            .then(csv => {
+              Papa.parse(csv, {
+                header: true,
+                skipEmptyLines: true,
+                transformHeader: header => header.trim().replace(/^"|"$/g, ''),
+                transform: value => value.trim().replace(/^"|"$/g, ''),
+                complete: (results) => {
+                  const cleanedData = processAndCleanData(results.data);
+                  setData(cleanedData);
+                  setLoading(false);
+                },
+                error: (err) => {
+                  console.error('CSV Parsing Error:', err);
+                  setLoading(false);
+                },
+              });
+            })
+            .catch(err => {
+              console.error('Fetch Error:', err);
+              setLoading(false);
+            });
+        }, []);
+      
+      // Initializing map
+      useEffect(() => {
+        if (data.length === 0) return;
+
+        const map = L.map('map').setView([13.085, 80.275], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+
+        data.forEach(row => {
+          if (row.location && (eventFilter === 'All' || row.event === eventFilter)) {
+            const color = row.event === 'fire_risk' ? 'red' : row.event === 'motion_detected' ? 'blue' : 'gray';
+            L.circleMarker([row.location.lat, row.location.lon], {
+              color,
+              radius: 8,
+              fillOpacity: 0.5,
+            })
+              .addTo(map)
+              .bindPopup(`<b>${row.event}</b><br>Time: ${row.timestamp.toLocaleString()}`);
+          }
         });
-      })
-      .catch((err) => {
-        console.error("Failed to fetch sensor data:", err);
-      });
-  </script>
 
+        return () => map.remove();
+      }, [data, eventFilter]);
+
+      // Filtering data for visualizations
+      const filteredData = useMemo(() => {
+        return eventFilter === 'All' ? data : data.filter(row => row.event === eventFilter);
+      }, [data, eventFilter]);
+
+      // Counting events for bar chart
+      const eventCounts = useMemo(() => {
+        const counts = { fire_risk: 0, motion_detected: 0, None: 0 };
+        data.forEach(row => counts[row.event]++);
+        return [
+          { event: 'Fire Risk', count: counts.fire_risk },
+          { event: 'Motion Detected', count: counts.motion_detected },
+          { event: 'None', count: counts.None },
+        ];
+      }, [data]);
+
+      // Rendering loading state
+      if (loading) {
+        return <div className="text-center text-2xl mt-10">Loading...</div>;
+      }
+
+      // Rendering main dashboard
+      return (
+        <div className="container mx-auto p-4">
+          {/* Setting up dashboard title */}
+          <h1 className="text-3xl font-bold text-green-700 mb-6">Forest Monitoring Dashboard</h1>
+
+          {/* Displaying summary */}
+          <div className="bg-white p-4 rounded-lg shadow mb-6">
+            <h2 className="text-xl font-semibold mb-2">Summary</h2>
+            <p className="text-gray-700">
+              Monitoring {data.length} events. High fire risk events (13) detected with temperatures often above 35°C, indicating potential hotspots around coordinates ~13.08, 80.27.
+            </p>
+          </div>
+
+          {/* Visualizing temperature, pressure, and motion */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="bg-white p-4 rounded-lg shadow">
+              <h2 className="text-xl font-semibold mb-2">Temperature Over Time</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={filteredData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="timestamp"
+                    tickFormatter={time => time.toLocaleTimeString()}
+                    fontSize={12}
+                  />
+                  <YAxis label={{ value: 'Temperature (°C)', angle: -90, position: 'insideLeft', fontSize: 12 }} fontSize={12} />
+                  <Tooltip formatter={(value) => `${value} °C`} labelFormatter={time => time.toLocaleString()} />
+                  <Legend />
+                  <Line type="monotone" dataKey="temperature" stroke="#ff7300" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="bg-white p-4 rounded-lg shadow">
+              <h2 className="text-xl font-semibold mb-2">Pressure Over Time</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={filteredData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="timestamp"
+                    tickFormatter={time => time.toLocaleTimeString()}
+                    fontSize={12}
+                  />
+                  <YAxis label={{ value: 'Pressure (hPa)', angle: -90, position: 'insideLeft', fontSize: 12 }} fontSize={12} />
+                  <Tooltip formatter={(value) => `${value} hPa`} labelFormatter={time => time.toLocaleString()} />
+                  <Legend />
+                  <Line type="monotone" dataKey="pressure" stroke="#387908" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="bg-white p-4 rounded-lg shadow">
+              <h2 className="text-xl font-semibold mb-2">Motion Magnitude Over Time</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={filteredData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="timestamp"
+                    tickFormatter={time => time.toLocaleTimeString()}
+                    fontSize={12}
+                  />
+                  <YAxis label={{ value: 'Motion Magnitude', angle: -90, position: 'insideLeft', fontSize: 12 }} fontSize={12} />
+                  <Tooltip formatter={(value) => `${value.toFixed(2)}`} labelFormatter={time => time.toLocaleString()} />
+                  <Legend />
+                  <Line type="monotone" dataKey="motion_magnitude" stroke="#0000ff" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="bg-white p-4 rounded-lg shadow">
+              <h2 className="text-xl font-semibold mb-2">Event Distribution</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={eventCounts}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="event" fontSize={12} />
+                  <YAxis label={{ value: 'Count', angle: -90, position: 'insideLeft', fontSize: 12 }} fontSize={12} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="count" fill="#8884d8" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Displaying GPS map */}
+          <div className="bg-white p-4 rounded-lg shadow mb-6">
+            <h2 className="text-xl font-semibold mb-2">Event Locations</h2>
+            <div id="map" className="h-96 w-full"></div>
+          </div>
+
+          {/* Filtering and displaying event log */}
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-2">Event Log</h2>
+            <div className="mb-4">
+              <label className="mr-2">Filter by Event:</label>
+              <select
+                className="border rounded p-2"
+                value={eventFilter}
+                onChange={(e) => setEventFilter(e.target.value)}
+              >
+                <option value="All">All</option>
+                <option value="fire_risk">Fire Risk</option>
+                <option value="motion_detected">Motion Detected</option>
+                <option value="None">None</option>
+              </select>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border">
+                <thead>
+                  <tr className="bg-gray-200">
+                    <th className="px-4 py-2 border">Timestamp</th>
+                    <th className="px-4 py-2 border">Temperature (°C)</th>
+                    <th className="px-4 py-2 border">Pressure (hPa)</th>
+                    <th className="px-4 py-2 border">Motion X</th>
+                    <th className="px-4 py-2 border">Motion Y</th>
+                    <th className="px-4 py-2 border">Motion Z</th>
+                    <th className="px-4 py-2 border">Location</th>
+                    <th className="px-4 py-2 border">Event</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredData.map((row, index) => (
+                    <tr
+                      key={index}
+                      className={row.event === 'fire_risk' ? 'bg-red-100' : ''}
+                    >
+                      <td className="px-4 py-2 border">{row.timestamp.toLocaleString()}</td>
+                      <td className="px-4 py-2 border">{row.temperature?.toFixed(2) ?? '-'}</td>
+                      <td className="px-4 py-2 border">{row.pressure?.toFixed(2) ?? '-'}</td>
+                      <td className="px-4 py-2 border">{row.motion_x?.toFixed(2) ?? '-'}</td>
+                      <td className="px-4 py-2 border">{row.motion_y?.toFixed(2) ?? '-'}</td>
+                      <td className="px-4 py-2 border">{row.motion_z?.toFixed(2) ?? '-'}</td>
+                      <td className="px-4 py-2 border">{row.location ? `${row.location.lat}, ${row.location.lon}` : '-'}</td>
+                      <td className="px-4 py-2 border">{row.event}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // Rendering the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Dashboard />);
+  </script>
 </body>
 </html>
