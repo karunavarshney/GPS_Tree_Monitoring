@@ -78,31 +78,20 @@
       const [loading, setLoading] = useState(true);
 
       // Loading and parsing CSV data
-        useEffect(() => {
-          fetch('sample_forest_monitoring_data.csv')
-            .then(response => response.text())
-            .then(csv => {
-              Papa.parse(csv, {
-                header: true,
-                skipEmptyLines: true,
-                transformHeader: header => header.trim().replace(/^"|"$/g, ''),
-                transform: value => value.trim().replace(/^"|"$/g, ''),
-                complete: (results) => {
-                  const cleanedData = processAndCleanData(results.data);
-                  setData(cleanedData);
-                  setLoading(false);
-                },
-                error: (err) => {
-                  console.error('CSV Parsing Error:', err);
-                  setLoading(false);
-                },
-              });
-            })
-            .catch(err => {
-              console.error('Fetch Error:', err);
-              setLoading(false);
-            });
-        }, []);
+      useEffect(() => {
+  fetch('https://chandantree.karuna28396.repl.co/api/sensor-data')
+    .then(response => response.json())
+    .then(json => {
+      const cleanedData = processAndCleanData(json);
+      setData(cleanedData);
+      setLoading(false);
+    })
+    .catch(err => {
+      console.error('Fetch Error:', err);
+      setLoading(false);
+    });
+}, []);
+, []);
       
       // Initializing map
       useEffect(() => {
